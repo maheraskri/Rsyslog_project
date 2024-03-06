@@ -1,0 +1,55 @@
+---
+- name: rsyslog project 
+  hosts: localhost
+  tasks:
+    - name: configure TCP rsyslog reception
+      lineinfile:
+        path: /etc/rsyslog.conf
+        regexp: "{{ item.match }}"
+        line: "{{ item.newline }}"
+      loop:
+        - { match: '^#module\(load="imtcp"\)', newline: 'module(load="imtcp")' }
+        - { match: '^#input\(type="imtcp" port="514"\)', newline: 'input(type="imtcp" port="514")' } 
+    - name: create template
+      blockinfile:
+        block: |
+          $template meher,"/mylogs/%HOSTNAME%/%syslogseverity-text%.log"
+          *.*   -?meher
+        path: /etc/rsyslog.conf
+        state: present
+      notify: restart_rsyslog
+    - name: create the logs directory 
+      file:
+        path: /mylogs
+        state: directory
+    - name: open the firewall port 
+      firewalld: 
+        port: 514/tcp
+        state: enabled
+        immediate: yes
+        permanent: yes
+  handlers:
+    - name: restart_rsyslog
+      service: 
+        name: rsyslog
+        state: restarted
+
+- name: confiugre clients
+  hosts: node1,node2
+  tasks:
+    - name: create a jinja2 template
+      template:
+        src:  templates/remote.conf.j2
+        dest: /etc/rsyslog.d/remote.conf
+        mode: '644'
+        owner: root
+        group: root
+    - name: restart the rsyslog service on remote nodes
+      service:
+        name: rsyslog
+        state: restarted
+    - name: test with a simple log mssg 
+      syslogger:
+         msg: "Unknown log in"
+         priority: "alert"
+
